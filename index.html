@@ -1,0 +1,690 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>V-DET | Motion Tracker</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd/dist/coco-ssd.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary-color: #0a0a0a;
+            --secondary-color: #1a1a1a;
+            --accent-color: #00ff95;
+            --text-color: #e5e5e5;
+            --border-color: #333333;
+        }
+        body {
+            font-family: 'Share Tech Mono', monospace;
+            background-color: var(--primary-color);
+            color: var(--text-color);
+            overflow-x: hidden;
+        }
+        #loader-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: var(--primary-color);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 2000;
+            flex-direction: column;
+        }
+        #loader-box {
+            width: 500px;
+            padding: 2rem;
+            border: 1px solid var(--border-color);
+            background: var(--secondary-color);
+        }
+        #loader-progress-bar {
+            width: 0%;
+            height: 5px;
+            background-color: var(--accent-color);
+            box-shadow: 0 0 5px var(--accent-color);
+            transition: width 0.5s ease-out;
+        }
+        #loader-status {
+            margin-top: 1rem;
+            font-size: 0.875rem;
+            color: var(--text-color);
+        }
+        .tech-container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 1rem;
+            display: none; /* Hidden by default */
+        }
+        .top-bar {
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 0.5rem;
+            margin-bottom: 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .top-bar .logo {
+            font-size: 1.5rem;
+            color: var(--accent-color);
+            text-shadow: 0 0 5px var(--accent-color);
+        }
+        .nav-link {
+            padding: 0.5rem 1rem;
+            border: 1px solid transparent;
+            cursor: pointer;
+            transition: all 0.2s ease-in-out;
+        }
+        .nav-link.active {
+            border-color: var(--accent-color);
+            color: var(--accent-color);
+        }
+        .nav-link:hover {
+            background-color: rgba(0, 255, 149, 0.1);
+        }
+        .page {
+            display: none;
+        }
+        .page.active {
+            display: block;
+        }
+        .tech-panel {
+            background-color: var(--secondary-color);
+            border: 1px solid var(--border-color);
+            padding: 1.5rem;
+            margin-bottom: 1rem;
+        }
+        .control-panel {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .tech-title {
+            color: var(--text-color);
+            font-size: 1.25rem;
+            margin-bottom: 1rem;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 0.5rem;
+        }
+        .side-by-side {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1rem;
+        }
+        canvas {
+            background-color: #000;
+            width: 100%;
+            height: auto;
+            border: 1px solid var(--border-color);
+        }
+        .tech-button {
+            background-color: transparent;
+            border: 1px solid var(--accent-color);
+            color: var(--accent-color);
+            padding: 0.75rem 1.5rem;
+            cursor: pointer;
+            transition: all 0.2s ease-in-out;
+            white-space: nowrap;
+        }
+        .tech-button:hover:not(:disabled) {
+            background-color: var(--accent-color);
+            color: var(--primary-color);
+        }
+        .tech-button:disabled {
+            border-color: var(--border-color);
+            color: var(--border-color);
+            cursor: not-allowed;
+        }
+        #log-output {
+            background-color: #000;
+            border: 1px solid var(--border-color);
+            height: 150px;
+            overflow-y: scroll;
+            padding: 0.5rem;
+            font-size: 0.875rem;
+            white-space: pre-wrap;
+        }
+        .progress-bar-container {
+            width: 100%;
+            background-color: #000;
+            border: 1px solid var(--border-color);
+            padding: 2px;
+        }
+        .progress-bar {
+            width: 0%;
+            height: 20px;
+            background-color: var(--accent-color);
+            transition: width 0.1s linear;
+        }
+        .slider-container {
+            margin-bottom: 1.5rem;
+        }
+        .slider-container label {
+            display: block;
+            margin-bottom: 0.5rem;
+        }
+        .slider-container input[type="range"] {
+            -webkit-appearance: none;
+            width: 100%;
+            height: 2px;
+            background: var(--border-color);
+            outline: none;
+            opacity: 0.7;
+            transition: opacity .2s;
+        }
+        .slider-container input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 15px;
+            height: 15px;
+            background: var(--accent-color);
+            cursor: pointer;
+            box-shadow: 0 0 5px var(--accent-color);
+        }
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0,0,0,0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            display: none;
+        }
+        .modal-content {
+            background: var(--secondary-color);
+            border: 1px solid var(--accent-color);
+            padding: 2rem;
+            max-width: 90vw;
+            max-height: 90vh;
+        }
+        .modal-content video {
+            max-width: 100%;
+            max-height: 70vh;
+        }
+    </style>
+</head>
+<body>
+    <div id="loader-overlay">
+        <div id="loader-box">
+            <h2 class="tech-title">Initializing V-DET System...</h2>
+            <div class="progress-bar-container" style="height: 5px;">
+                <div id="loader-progress-bar"></div>
+            </div>
+            <p id="loader-status">> Pinging machine spirit...</p>
+        </div>
+    </div>
+    
+    <div class="tech-container">
+        <div class="top-bar">
+            <div class="logo">V-DET</div>
+            <nav>
+                <a class="nav-link active" data-page="vdet">V-DET</a>
+                <a class="nav-link" data-page="settings">Settings</a>
+            </nav>
+        </div>
+
+        <div id="page-vdet" class="page active">
+            <h2 class="tech-title">Visual Detection & Tracking System</h2>
+            <div class="tech-panel control-panel">
+                <div>
+                    <label for="file-upload" class="tech-button">Select File</label>
+                    <span id="file-name" class="ml-4">No file selected.</span>
+                </div>
+                <input id="file-upload" type="file" class="hidden" accept="video/*">
+                <button id="start-button" class="tech-button" disabled>Initialize Tracking</button>
+            </div>
+            <div class="side-by-side">
+                <div>
+                    <h3 class="tech-title">Source Feed</h3>
+                    <canvas id="original-canvas"></canvas>
+                </div>
+                <div>
+                    <h3 class="tech-title">Tracked Output</h3>
+                    <canvas id="tracked-canvas"></canvas>
+                </div>
+            </div>
+            <div class="tech-panel mt-4">
+                 <h3 class="tech-title">System Log</h3>
+                 <div id="log-output"></div>
+                 <h3 class="tech-title mt-4">Progress</h3>
+                 <div id="progress-text" class="mb-2">Idle</div>
+                 <div class="progress-bar-container">
+                    <div id="progress-bar" class="progress-bar"></div>
+                 </div>
+            </div>
+        </div>
+
+        <div id="page-settings" class="page">
+            <h2 class="tech-title">System Configuration</h2>
+            <div class="tech-panel">
+                <div class="slider-container">
+                    <label for="sensitivity">Detection Sensitivity: <span id="sensitivity-value">0.05</span></label>
+                    <input type="range" id="sensitivity" min="0.05" max="0.9" step="0.05" value="0.05">
+                    <p class="text-sm text-gray-400">Lower values detect more, potentially irrelevant, objects.</p>
+                </div>
+                <div class="slider-container">
+                    <label for="framerate">Source Framerate (FPS): <span id="framerate-value">30</span></label>
+                    <input type="range" id="framerate" min="5" max="60" step="1" value="30">
+                     <p class="text-sm text-gray-400">Match this to your source video's framerate for best results.</p>
+                </div>
+                 <div class="slider-container">
+                    <label for="max-detections">Max Detections / Frame: <span id="max-detections-value">50</span></label>
+                    <input type="range" id="max-detections" min="25" max="150" step="5" value="50">
+                     <p class="text-sm text-gray-400">Limits how many objects are detected in a single frame.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div id="modal" class="modal-overlay">
+        <div class="modal-content text-center">
+            <h2 class="tech-title">Processing Complete</h2>
+            <video id="output-video" controls autoplay loop></video>
+            <div class="mt-4">
+                <a id="download-button" class="tech-button">Download Video</a>
+                <button id="close-modal" class="tech-button">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <video id="video" style="display: none;" playsinline muted></video>
+
+    <script>
+        // --- DOM Elements ---
+        const techContainer = document.querySelector('.tech-container');
+        const loaderOverlay = document.getElementById('loader-overlay');
+        const loaderProgressBar = document.getElementById('loader-progress-bar');
+        const loaderStatus = document.getElementById('loader-status');
+        const video = document.getElementById('video');
+        const originalCanvas = document.getElementById('original-canvas');
+        const trackedCanvas = document.getElementById('tracked-canvas');
+        const oCtx = originalCanvas.getContext('2d');
+        const tCtx = trackedCanvas.getContext('2d');
+        const fileUpload = document.getElementById('file-upload');
+        const fileNameDisplay = document.getElementById('file-name');
+        const startButton = document.getElementById('start-button');
+        const logOutput = document.getElementById('log-output');
+        const progressBar = document.getElementById('progress-bar');
+        const progressText = document.getElementById('progress-text');
+        const navLinks = document.querySelectorAll('.nav-link');
+        const pages = document.querySelectorAll('.page');
+        const modal = document.getElementById('modal');
+        const outputVideo = document.getElementById('output-video');
+        const downloadButton = document.getElementById('download-button');
+        const closeModalButton = document.getElementById('close-modal');
+
+        // --- Settings Elements ---
+        const sensitivitySlider = document.getElementById('sensitivity');
+        const sensitivityValue = document.getElementById('sensitivity-value');
+        const framerateSlider = document.getElementById('framerate');
+        const framerateValue = document.getElementById('framerate-value');
+        const maxDetectionsSlider = document.getElementById('max-detections');
+        const maxDetectionsValue = document.getElementById('max-detections-value');
+        
+        // --- State Variables ---
+        let model = null;
+        let isProcessing = false;
+        let tracks = {};
+        let nextTrackId = 0;
+        let mediaRecorder;
+        let recordedChunks = [];
+        let processedFrames = [];
+        let scaledWidth, scaledHeight;
+        let compileAnimId;
+
+        let config = {
+            sensitivity: 0.05,
+            fps: 30,
+            maxDetections: 50,
+            maxHeight: 720
+        };
+
+        // --- Core Functions ---
+
+        async function loadModel() {
+            try {
+                await updateLoader(25, '> Awakening TensorFlow.js core...');
+                await new Promise(resolve => setTimeout(resolve, 300));
+                await updateLoader(50, '> Loading COCO-SSD model...');
+                model = await cocoSsd.load();
+                await updateLoader(90, '> Calibrating model parameters...');
+                await new Promise(resolve => setTimeout(resolve, 400));
+                await updateLoader(100, '> System Online.');
+                await new Promise(resolve => setTimeout(resolve, 500));
+                loaderOverlay.style.opacity = 0;
+                setTimeout(() => {
+                    loaderOverlay.style.display = 'none';
+                    techContainer.style.display = 'block';
+                    log('Model loaded successfully. Ready to process files.');
+                }, 500);
+            } catch (err) {
+                loaderStatus.textContent = 'FATAL ERROR: Could not initialize model.';
+                log('ERROR: Failed to load model. See console for details.');
+                console.error(err);
+            }
+        }
+        
+        async function updateLoader(progress, status) {
+            return new Promise(resolve => {
+                loaderProgressBar.style.width = `${progress}%`;
+                loaderStatus.textContent = status;
+                resolve();
+            });
+        }
+        
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            resetState();
+            fileNameDisplay.textContent = file.name;
+            const url = URL.createObjectURL(file);
+            video.src = url;
+            startButton.disabled = false;
+        }
+
+        async function frameByFrameProcessor() {
+            updateProgress(0, 'Analyzing video frames...');
+            
+            if (!scaledWidth || !scaledHeight) {
+                log('ERROR: Invalid video dimensions. Cannot process.');
+                isProcessing = false;
+                startButton.textContent = 'Initialize Tracking';
+                return;
+            }
+
+            video.pause();
+            let totalFrames = Math.floor(video.duration * config.fps);
+
+            for (let i = 0; i < totalFrames; i++) {
+                if (!isProcessing) {
+                    log('Processing halted by user.');
+                    return;
+                }
+                video.currentTime = i / config.fps;
+                await new Promise(resolve => { video.addEventListener('seeked', resolve, { once: true }); });
+
+                oCtx.drawImage(video, 0, 0, scaledWidth, scaledHeight);
+                tCtx.drawImage(video, 0, 0, scaledWidth, scaledHeight);
+                
+                let predictions = await model.detect(originalCanvas, undefined, config.sensitivity);
+                predictions.splice(config.maxDetections); // Limit detections per frame
+                renderPredictions(predictions);
+                processedFrames.push(tCtx.getImageData(0, 0, scaledWidth, scaledHeight));
+                
+                const progress = ((i + 1) / totalFrames) * 100;
+                updateProgress(progress, `Analyzing frame: ${i + 1}/${totalFrames} | Detected: ${predictions.length} objects`);
+            }
+            
+            if (isProcessing) {
+                compileVideo();
+            }
+        }
+        
+        function renderPredictions(predictions) {
+            const newTracks = {};
+            const currentFrameCenters = [];
+
+            predictions.forEach(prediction => {
+                const [x, y, width, height] = prediction.bbox;
+                const centerX = x + width / 2;
+                const centerY = y + height / 2;
+
+                let bestMatchId = null;
+                let minDistance = Infinity;
+
+                for (const trackId in tracks) {
+                    if (newTracks[trackId]) continue; 
+                    const track = tracks[trackId];
+                    const lastPos = track.positions[track.positions.length - 1];
+                    const distance = Math.hypot(centerX - lastPos.x, centerY - lastPos.y);
+                    // More accurate tracking: reduced distance threshold
+                    if (distance < minDistance && distance < 50) { 
+                        minDistance = distance;
+                        bestMatchId = trackId;
+                    }
+                }
+                
+                if (bestMatchId) {
+                    tracks[bestMatchId].positions.push({ x: centerX, y: centerY });
+                    tracks[bestMatchId].bbox = prediction.bbox;
+                    newTracks[bestMatchId] = tracks[bestMatchId];
+                    delete tracks[bestMatchId]; 
+                } else {
+                    newTracks[nextTrackId] = { id: nextTrackId, positions: [{ x: centerX, y: centerY }], bbox: prediction.bbox };
+                    nextTrackId++;
+                }
+            });
+
+            tracks = newTracks;
+            
+            // Draw boxes and movement lines
+            tCtx.strokeStyle = '#FFFFFF';
+            tCtx.fillStyle = '#FFFFFF';
+            tCtx.lineWidth = 1;
+            tCtx.font = '12px Share Tech Mono';
+
+            for (const trackId in tracks) {
+                const track = tracks[trackId];
+                if (track.bbox) {
+                    const [x, y, w, h] = track.bbox;
+                    tCtx.strokeRect(x, y, w, h);
+                    tCtx.fillText(track.id, x, y > 10 ? y - 2 : y + 12);
+                    currentFrameCenters.push({x: x + w/2, y: y + h/2});
+                }
+                if (track.positions.length > 1) {
+                    tCtx.beginPath();
+                    tCtx.moveTo(track.positions[0].x, track.positions[0].y);
+                    for (let i = 1; i < track.positions.length; i++) {
+                        tCtx.lineTo(track.positions[i].x, track.positions[i].y);
+                    }
+                    tCtx.stroke();
+                }
+            }
+
+            // Draw "Nexus" lines to median point
+            if (currentFrameCenters.length > 1) {
+                const findMedian = arr => {
+                    const mid = Math.floor(arr.length / 2);
+                    return arr.length % 2 !== 0 ? arr[mid] : (arr[mid - 1] + arr[mid]) / 2;
+                };
+                const xCoords = currentFrameCenters.map(c => c.x).sort((a,b) => a - b);
+                const yCoords = currentFrameCenters.map(c => c.y).sort((a,b) => a - b);
+                const medianX = findMedian(xCoords);
+                const medianY = findMedian(yCoords);
+
+                tCtx.strokeStyle = 'rgba(0, 255, 149, 0.3)'; // Faint accent color
+                tCtx.lineWidth = 0.5;
+                tCtx.beginPath();
+                currentFrameCenters.forEach(center => {
+                    tCtx.moveTo(center.x, center.y);
+                    tCtx.lineTo(medianX, medianY);
+                });
+                tCtx.stroke();
+            }
+        }
+        
+        // Accurate video compilation using requestAnimationFrame
+        function compileVideo() {
+            startRecording();
+            let frameIndex = 0;
+            let lastFrameTime = 0;
+            
+            function compileLoop(timestamp) {
+                if (!isProcessing) {
+                    if (compileAnimId) cancelAnimationFrame(compileAnimId);
+                    return;
+                }
+                
+                if (lastFrameTime === 0) {
+                    lastFrameTime = timestamp;
+                }
+
+                const deltaTime = timestamp - lastFrameTime;
+                const frameDuration = 1000 / config.fps;
+
+                if (deltaTime >= frameDuration) {
+                    lastFrameTime = timestamp - (deltaTime % frameDuration);
+                    
+                    if (frameIndex < processedFrames.length) {
+                        tCtx.putImageData(processedFrames[frameIndex], 0, 0);
+                        frameIndex++;
+                        const progress = (frameIndex / processedFrames.length) * 100;
+                        updateProgress(progress, `Compiling video... Frame ${frameIndex}/${processedFrames.length}`);
+                    } else {
+                        handleVideoEnd();
+                        return;
+                    }
+                }
+                
+                compileAnimId = requestAnimationFrame(compileLoop);
+            }
+            compileAnimId = requestAnimationFrame(compileLoop);
+        }
+
+        function handleStart() {
+            isProcessing = !isProcessing;
+            if (isProcessing) {
+                startButton.textContent = 'Stop Processing';
+                frameByFrameProcessor();
+            } else {
+                startButton.textContent = 'Initialize Tracking';
+                log('Processing stopped by user.');
+                if (compileAnimId) cancelAnimationFrame(compileAnimId);
+            }
+        }
+
+        function setupCanvas() {
+            const aspectRatio = video.videoWidth / video.videoHeight;
+            scaledHeight = video.videoHeight > config.maxHeight ? config.maxHeight : video.videoHeight;
+            scaledWidth = scaledHeight * aspectRatio;
+            
+            [originalCanvas, trackedCanvas].forEach(c => {
+                c.width = scaledWidth;
+                c.height = scaledHeight;
+            });
+            oCtx.drawImage(video, 0, 0, scaledWidth, scaledHeight);
+            tCtx.drawImage(video, 0, 0, scaledWidth, scaledHeight);
+            log(`Video loaded. Resolution: ${video.videoWidth}x${video.videoHeight}. Scaled to: ${Math.round(scaledWidth)}x${Math.round(scaledHeight)}`);
+        }
+
+        function handleVideoEnd() {
+            if (!isProcessing && recordedChunks.length === 0) return;
+            isProcessing = false;
+            stopRecording();
+            log('Video processing finished.');
+            setTimeout(showOutputModal, 500);
+        }
+
+        function startRecording() {
+            recordedChunks = [];
+            const stream = trackedCanvas.captureStream(); // No FPS needed here, rAF handles timing
+            const options = { mimeType: 'video/webm' };
+            try { mediaRecorder = new MediaRecorder(stream, options); }
+            catch (e) {
+                log(`ERROR: MediaRecorder failed. ${e.message}.`);
+                isProcessing = false;
+                startButton.textContent = 'Initialize Tracking';
+                return;
+            }
+            mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordedChunks.push(e.data); };
+            mediaRecorder.start();
+            log('Compilation and recording started.');
+        }
+
+        function stopRecording() {
+            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                mediaRecorder.stop();
+                log('Recording stopped.');
+            }
+        }
+        
+        function showOutputModal() {
+            if (recordedChunks.length === 0) {
+                log('WARNING: No video data was recorded. Cannot generate output.');
+                return;
+            }
+            const blob = new Blob(recordedChunks, { type: 'video/webm' });
+            const url = URL.createObjectURL(blob);
+            outputVideo.src = url;
+            downloadButton.href = url;
+            downloadButton.download = `v-det-output-${Date.now()}.webm`;
+            modal.style.display = 'flex';
+            startButton.disabled = true;
+        }
+
+        function updateProgress(percent, text) {
+            progressBar.style.width = `${percent}%`;
+            progressText.textContent = text;
+            log(text);
+        }
+
+        function log(message) {
+            console.log(message);
+            const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            logOutput.innerHTML += `[${timestamp}] ${message}\n`;
+            logOutput.scrollTop = logOutput.scrollHeight;
+        }
+
+        function resetState() {
+            isProcessing = false;
+            if (compileAnimId) cancelAnimationFrame(compileAnimId);
+            tracks = {};
+            nextTrackId = 0;
+            processedFrames = [];
+            stopRecording();
+            startButton.textContent = 'Initialize Tracking';
+            startButton.disabled = true;
+            updateProgress(0, 'Idle');
+            logOutput.innerHTML = '';
+            if (originalCanvas.width > 0) oCtx.clearRect(0, 0, originalCanvas.width, originalCanvas.height);
+            if (trackedCanvas.width > 0) tCtx.clearRect(0, 0, trackedCanvas.width, trackedCanvas.height);
+        }
+
+        // --- Event Listeners Setup ---
+        window.addEventListener('load', loadModel);
+        fileUpload.addEventListener('change', handleFileSelect);
+        startButton.addEventListener('click', handleStart);
+        video.addEventListener('loadedmetadata', setupCanvas);
+        
+        navLinks.forEach(link => {
+            link.addEventListener('click', () => {
+                const pageId = link.getAttribute('data-page');
+                pages.forEach(p => p.classList.remove('active'));
+                navLinks.forEach(l => l.classList.remove('active'));
+                document.getElementById(`page-${pageId}`).classList.add('active');
+                link.classList.add('active');
+            });
+        });
+        
+        sensitivitySlider.addEventListener('input', e => {
+            config.sensitivity = parseFloat(e.target.value);
+            sensitivityValue.textContent = config.sensitivity.toFixed(2);
+        });
+        framerateSlider.addEventListener('input', e => {
+            config.fps = parseInt(e.target.value, 10);
+            framerateValue.textContent = config.fps;
+        });
+        maxDetectionsSlider.addEventListener('input', e => {
+            config.maxDetections = parseInt(e.target.value, 10);
+            maxDetectionsValue.textContent = config.maxDetections;
+        });
+        
+        closeModalButton.addEventListener('click', () => {
+            modal.style.display = 'none';
+            if (outputVideo.src) {
+                outputVideo.pause();
+                URL.revokeObjectURL(outputVideo.src);
+            }
+        });
+    </script>
+</body>
+</html>
